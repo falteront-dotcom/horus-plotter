@@ -1,0 +1,14 @@
+"""
+Batch 1/5 — Core fixes & enhancements (items 1-10)
+
+1. Fix empty text → 0 pages
+2. Add config validation
+3. Add dry-run simulation mode
+4. Add stats/timing estimator
+5. Add multi-page concatenation
+6. Add resume-from-page
+7. Add page numbers in footer
+8. Paragraph auto-detection (no tabs needed)
+9. Smart quote replacement
+10. Orphan/widow control
+"""

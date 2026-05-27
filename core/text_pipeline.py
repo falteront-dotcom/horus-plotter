@@ -120,16 +120,38 @@ def full_text_pipeline(
     notebook_cfg: Optional[NotebookConfig] = None,
     text_cfg: Optional[TextConfig] = None,
     plot_cfg: Optional[PlotConfig] = None,
+    start_page: int = 0,
+    smart_paragraphs: bool = True,
+    smart_typo: bool = True,
 ) -> list[tuple[int, Drawing, str]]:
     """Full pipeline: text → notebook pages → (page_num, Drawing, G-code).
 
-    Returns list of (page_number, Drawing, gcode_string) tuples.
+    Args:
+        text: Raw lecture text.
+        notebook_cfg: Notebook layout config.
+        text_cfg: Text rendering config.
+        plot_cfg: Plotter config.
+        start_page: First page number (for resume).
+        smart_paragraphs: Auto-detect paragraph breaks.
+        smart_typo: Replace ASCII with Unicode typography.
     """
     nc = notebook_cfg or NotebookConfig()
     tc = text_cfg or TextConfig()
     pc = plot_cfg or PlotConfig()
 
-    pages = text_to_notebook_drawing(text, nc, tc)
+    text = text.strip()
+    if not text:
+        return []  # Fix #1: empty text -> 0 pages
+
+    if smart_typo:
+        from .improvements import apply_smart_typography
+        text = apply_smart_typography(text)
+
+    if smart_paragraphs:
+        from .improvements import smart_detect_paragraphs
+        text = smart_detect_paragraphs(text)
+
+    pages = text_to_notebook_drawing(text, nc, tc, start_page=start_page)
 
     results = []
     for page_num, drawing in pages:
