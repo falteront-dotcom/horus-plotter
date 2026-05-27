@@ -57,7 +57,7 @@ def generate_variants(base_family: str, count: int = 60, seed: int = 42) -> List
     
     for i in range(count):
         # Each variant gets a distinct "personality"
-        personality = i / count  # 0-1 personality spectrum
+        personality = i / max(1, count - 1)  # 0-1 personality spectrum
         
         # Map personality to parameter clusters for recognizable styles
         if personality < 0.2:
@@ -104,7 +104,7 @@ def generate_variants(base_family: str, count: int = 60, seed: int = 42) -> List
         
         # Name based on characteristics
         adj = _pick_adjective(personality, slant, weight, wobble, rng)
-        name = f"{adj} {BASE_NAMES.get(base_family, base_family)}"
+        name = f"{adj} {BASE_NAMES.get(base_family, base_family)} #{i}"
         
         variants.append(FontVariant(
             name=name, base_family=base_family,
@@ -250,9 +250,12 @@ def generate_all_fonts(per_family: int = 60) -> Dict[str, dict]:
         for variant in variants:
             transformed = transform_font(base_font, variant)
             font_key = variant.name
-            # Ensure uniqueness
-            if font_key in all_fonts:
-                font_key = f"{font_key} #{variant.seed}"
+            # Ensure uniqueness — append seed+counter if collision
+            counter = 1
+            base_key = font_key
+            while font_key in all_fonts:
+                counter += 1
+                font_key = f"{base_key} #{variant.seed}_{counter}"
             all_fonts[font_key] = transformed
     
     return all_fonts
