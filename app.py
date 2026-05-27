@@ -406,60 +406,370 @@ async def main(page: ft.Page):
     
     dashboard_panel = ft.Container(dashboard, padding=20, expand=True)
     
-    # Panel 1: TEXT MODE (simplified for now — will be full later)
+    # Panel 1: TEXT MODE — FULLY FUNCTIONAL
+    page_size_tf = ft.TextField(label="Страница (ШxВ мм)", value="210x297", width=140,
+                                 border_radius=10, border_color=PALETTE["border"],
+                                 bgcolor=PALETTE["card"], color=PALETTE["text"])
+    margin_tf = ft.TextField(label="Поля (мм)", value="25", width=90,
+                              border_radius=10, border_color=PALETTE["border"],
+                              bgcolor=PALETTE["card"], color=PALETTE["text"])
+    font_size_tf = ft.TextField(label="Шрифт (мм)", value="5.0", width=90,
+                                 border_radius=10, border_color=PALETTE["border"],
+                                 bgcolor=PALETTE["card"], color=PALETTE["text"])
+    spacing_tf = ft.TextField(label="Интервал (мм)", value="8.0", width=100,
+                               border_radius=10, border_color=PALETTE["border"],
+                               bgcolor=PALETTE["card"], color=PALETTE["text"])
+    
     text_input = ft.TextField(
-        label="Текст лекции", multiline=True, min_lines=10, max_lines=15,
-        width=700, border_radius=12,
+        hint_text="Вставьте текст лекции...", multiline=True, min_lines=12, max_lines=16,
+        width=None, border_radius=12, expand=True,
         border_color=PALETTE["border"], cursor_color=PALETTE["primary_glow"],
-        bgcolor=PALETTE["card"], text_style=ft.TextStyle(color=PALETTE["text"]),
+        bgcolor=PALETTE["card"], text_style=ft.TextStyle(color=PALETTE["text"], size=14),
+        hint_style=ft.TextStyle(color=PALETTE["text_muted"], size=13),
     )
     
-    font_dd = ft.Dropdown(
-        label="Шрифт", width=220,
-        options=[ft.dropdown.Option(k, v) for k, v in FONT_DISPLAY_NAMES.items()],
-        value="semyon_cursive",
-        border_radius=10, border_color=PALETTE["border"],
-        bgcolor=PALETTE["card"], color=PALETTE["text"],
+    text_result = ft.Text("", size=12, color=PALETTE["accent"], weight=ft.FontWeight.W_600)
+    text_preview_box = ft.Container(
+        content=ft.Column([
+            ft.Icon(ft.Icons.EDIT_NOTE, size=48, color=PALETTE["text_muted"]),
+            ft.Text("Превью страницы", size=13, color=PALETTE["text_muted"]),
+        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.MainAxisAlignment.CENTER),
+        width=300, height=420, border_radius=16, border=ft.Border.all(1, PALETTE["border"]),
+        bgcolor=PALETTE["bg"],
     )
+    preview_image = ft.Image(src="", width=300, height=420, fit=ft.BoxFit.CONTAIN,
+                             border_radius=16, visible=False)
+    page_counter = ft.Text("", size=14, color=PALETTE["primary_glow"], weight=ft.FontWeight.W_700)
+    
+    async def on_load_text_file(e):
+        result = await file_picker.pick_files(allowed_extensions=["txt"])
+        if result:
+            with open(result[0].path, encoding="utf-8") as f:
+                text_input.value = f.read()
+            text_input.update()
+    
+    async def on_generate_text(e):
+        txt = text_input.value.strip()
+        if not txt:
+            text_result.value = "Введите текст!"
+            text_result.color = PALETTE["danger"]
+            text_result.update()
+            return
+        try:
+            parts = page_size_tf.value.split("x")
+            pw, ph = float(parts[0]), float(parts[1]) if len(parts) == 2 else (210, 297)
+            nc = NotebookConfig(page_width_mm=pw, page_height_mm=ph,
+                               left_margin_mm=float(margin_tf.value or 25))
+            tc = TextConfig(font_name=font_dd.value,
+                           font_size_mm=float(font_size_tf.value or 5),
+                           line_spacing_mm=float(spacing_tf.value or 8))
+            pc = PlotConfig()
+            results = await asyncio.get_running_loop().run_in_executor(
+                None, full_text_pipeline, txt, nc, tc, pc
+            )
+            state["text_pages"] = results
+            state["current_text_page"] = 0
+            
+            if results:
+                from core.gcode import drawing_to_preview
+                _, drawing, gcode = results[0]
+                state["text_gcode"] = gcode
+                b64 = drawing_to_preview(drawing, cw=300, ch=420,
+                                         work_area_x=nc.page_width_mm,
+                                         work_area_y=nc.page_height_mm)
+                if b64:
+                    preview_image.src = f"data:image/png;base64,{b64}"
+                    preview_image.visible = True
+                    text_preview_box.visible = False
+                total_cmds = sum(len([l for l in g.split(chr(10)) if l.strip() and not l.startswith(';')])
+                                for _, _, g in results)
+                text_result.value = f"✅ {len(results)} стр • {total_cmds} команд"
+                text_result.color = PALETTE["success"]
+                page_counter.value = f"Стр. 1 / {len(results)}"
+                
+                # Update dashboard stats
+                state["plot_count"] = len(results)
+                state["total_plot_mm"] = round(sum(d.total_draw_length() for _, d, _ in results))
+                
+                # Save to history
+                db = PlotHistoryDB("plot_history.db")
+                db.record(txt[:100], tc.font_name, len(results), total_cmds,
+                         state["total_plot_mm"], 0)
+            else:
+                text_result.value = "Пустой текст"
+                text_result.color = PALETTE["warning"]
+        except Exception as ex:
+            text_result.value = f"❌ {ex}"
+            text_result.color = PALETTE["danger"]
+        text_result.update()
+        preview_image.update()
+        text_preview_box.update()
+        page_counter.update()
+    
+    async def on_auto_optimize(e):
+        txt = text_input.value.strip()
+        if not txt:
+            text_result.value = "Введите текст для анализа"
+            text_result.color = PALETTE["warning"]
+            text_result.update()
+            return
+        parts = page_size_tf.value.split("x")
+        pw, ph = float(parts[0]), float(parts[1]) if len(parts) == 2 else (210, 297)
+        r = auto_optimize_layout(txt, pw, ph, float(margin_tf.value or 25), 20, 20)
+        font_size_tf.value = str(r['font_size_mm'])
+        spacing_tf.value = str(r['line_spacing_mm'])
+        text_result.value = f"🔮 Оптим: {r['font_size_mm']}мм, ~{r['estimated_pages']} стр"
+        text_result.color = PALETTE["accent"]
+        font_size_tf.update()
+        spacing_tf.update()
+        text_result.update()
+    
+    async def on_prev_page(e):
+        if state["text_pages"] and state["current_text_page"] > 0:
+            state["current_text_page"] -= 1
+            _, drawing, gcode = state["text_pages"][state["current_text_page"]]
+            state["text_gcode"] = gcode
+            from core.gcode import drawing_to_preview
+            nc = NotebookConfig()
+            b64 = drawing_to_preview(drawing, cw=300, ch=420,
+                                     work_area_x=nc.page_width_mm, work_area_y=nc.page_height_mm)
+            if b64:
+                preview_image.src = f"data:image/png;base64,{b64}"
+            page_counter.value = f"Стр. {state['current_text_page'] + 1} / {len(state['text_pages'])}"
+            preview_image.update()
+            page_counter.update()
+    
+    async def on_next_page(e):
+        if state["text_pages"] and state["current_text_page"] < len(state["text_pages"]) - 1:
+            state["current_text_page"] += 1
+            _, drawing, gcode = state["text_pages"][state["current_text_page"]]
+            state["text_gcode"] = gcode
+            from core.gcode import drawing_to_preview
+            nc = NotebookConfig()
+            b64 = drawing_to_preview(drawing, cw=300, ch=420,
+                                     work_area_x=nc.page_width_mm, work_area_y=nc.page_height_mm)
+            if b64:
+                preview_image.src = f"data:image/png;base64,{b64}"
+            page_counter.value = f"Стр. {state['current_text_page'] + 1} / {len(state['text_pages'])}"
+            preview_image.update()
+            page_counter.update()
+    
+    async def on_save_gcode(e):
+        gcode = state.get("text_gcode") or state.get("gcode")
+        if not gcode:
+            text_result.value = "Сначала сгенерируйте G-code"
+            text_result.color = PALETTE["warning"]
+            text_result.update()
+            return
+        result = await file_picker.save_file(
+            dialog_title="Сохранить G-code", file_name="plot.gcode",
+            allowed_extensions=["gcode", "nc", "txt"]
+        )
+        if result and result.path:
+            with open(result.path, "w") as f:
+                f.write(gcode)
+            text_result.value = f"Сохранено: {os.path.basename(result.path)}"
+            text_result.color = PALETTE["success"]
+            text_result.update()
     
     text_panel = ft.Container(
         ft.Column([
-            ft.Text("📝 Текст / Конспекты", size=22, weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.Text("📝 Текст / Конспекты", size=22, weight=ft.FontWeight.BOLD, color=PALETTE["text"]),
+                ft.Row([], expand=True),
+                page_counter,
+            ]),
             ft.Container(height=10),
-            text_input,
+            ft.Row([
+                font_dd, page_size_tf, margin_tf, font_size_tf, spacing_tf,
+            ], spacing=8),
             ft.Container(height=10),
-            ft.Row([font_dd, neural_button("Авто-оптимизация", ft.Icons.TUNE),
-                    neural_button("Сгенерировать", ft.Icons.AUTO_STORIES, primary=True)]),
-            ft.Container(height=10),
-            ft.Text("Превью появится здесь после генерации", size=12, color=PALETTE["text_muted"]),
-        ], spacing=4),
+            ft.Row([
+                ft.Column([
+                    ft.Row([
+                        neural_button("📥 Загрузить .txt", ft.Icons.FILE_OPEN,
+                                     on_click=on_load_text_file, small=True),
+                        neural_button("🔮 Авто-оптимизация", ft.Icons.TUNE,
+                                     on_click=on_auto_optimize, small=True),
+                        neural_button("🚀 Сгенерировать", ft.Icons.AUTO_STORIES,
+                                     on_click=on_generate_text, primary=True),
+                        neural_button("💾 Сохранить G-code", ft.Icons.SAVE,
+                                     on_click=on_save_gcode, small=True),
+                        neural_button("▶️ Печатать", ft.Icons.PLAY_ARROW,
+                                     primary=True, on_click=lambda e: send_current_gcode()),
+                    ], spacing=8),
+                    ft.Container(height=10),
+                    text_input,
+                    ft.Container(height=8),
+                    text_result,
+                ], expand=True, spacing=4),
+                ft.Column([
+                    ft.Row([
+                        ft.IconButton(ft.Icons.ARROW_LEFT, on_click=on_prev_page,
+                                      icon_color=PALETTE["primary_glow"]),
+                        ft.IconButton(ft.Icons.ARROW_RIGHT, on_click=on_next_page,
+                                      icon_color=PALETTE["primary_glow"]),
+                    ], alignment=ft.MainAxisAlignment.CENTER),
+                    ft.Stack([text_preview_box, preview_image], width=300, height=420),
+                ]),
+            ], spacing=16, expand=True),
+        ], spacing=4, expand=True),
         padding=30, expand=True,
     )
     
     # Panel 2: IMAGE MODE
+    img_preview = ft.Image(src="", width=350, height=350, fit=ft.BoxFit.CONTAIN, visible=False, border_radius=16)
+    img_placeholder = ft.Container(
+        content=ft.Column([
+            ft.Icon(ft.Icons.IMAGE, size=64, color=PALETTE["text_muted"]),
+            ft.Text("Перетащите или выберите изображение", size=14, color=PALETTE["text_muted"]),
+        ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.MainAxisAlignment.CENTER),
+        width=350, height=350, border_radius=16, border=ft.Border.all(2, PALETTE["border"], ft.Dash),
+        bgcolor=PALETTE["surface"],
+    )
+    style_dd = ft.Dropdown(
+        label="Стиль", width=200, value="hatching",
+        options=[ft.dropdown.Option(k, v) for k, v in {
+            "hatching":"Штриховка","halftone":"Полутон","stipple":"Точечная",
+            "spiral":"Спираль","woodcut":"Гравюра","hexagon":"Соты",
+            "concentric":"Концентр.","waves":"Волны","scribble":"Каракули"
+        }.items()],
+        border_radius=10, border_color=PALETTE["border"],
+        bgcolor=PALETTE["card"], color=PALETTE["text"],
+    )
+    img_result = ft.Text("", size=12, color=PALETTE["text_muted"])
+    
+    async def on_pick_image(e):
+        result = await file_picker.pick_files(
+            allowed_extensions=["png", "jpg", "jpeg", "bmp", "webp", "pdf", "docx"]
+        )
+        if result:
+            state["image_path"] = result[0].path
+            img_preview.src = result[0].path
+            img_preview.visible = True
+            img_placeholder.visible = False
+            img_result.value = f"Загружено: {os.path.basename(result[0].path)}"
+            img_result.color = PALETTE["success"]
+            img_preview.update()
+            img_placeholder.update()
+            img_result.update()
+    
+    async def on_generate_image(e):
+        if not state.get("image_path"):
+            img_result.value = "Сначала загрузите изображение"
+            img_result.color = PALETTE["warning"]
+            img_result.update()
+            return
+        try:
+            pc = PlotConfig(style=style_dd.value)
+            gcode, b64 = await asyncio.get_running_loop().run_in_executor(
+                None, image_to_gcode, state["image_path"], pc
+            )
+            state["gcode"] = gcode
+            if b64:
+                img_preview.src = f"data:image/png;base64,{b64}"
+            n = len([l for l in gcode.split(chr(10)) if l.strip() and not l.startswith(';')])
+            img_result.value = f"✅ {n} команд • стиль: {style_dd.value}"
+            img_result.color = PALETTE["success"]
+        except Exception as ex:
+            img_result.value = f"❌ {ex}"
+            img_result.color = PALETTE["danger"]
+        img_result.update()
+        img_preview.update()
+    
     image_panel = ft.Container(
         ft.Column([
-            ft.Text("🖼 Изображения", size=22, weight=ft.FontWeight.BOLD),
-            ft.Text("Загрузите изображение для конвертации", size=12, color=PALETTE["text_muted"]),
-        ]),
+            ft.Text("🖼 Изображения", size=22, weight=ft.FontWeight.BOLD, color=PALETTE["text"]),
+            ft.Container(height=10),
+            ft.Row([
+                ft.Column([
+                    ft.Stack([img_placeholder, img_preview], width=350, height=350),
+                    ft.Container(height=10),
+                    ft.Row([
+                        neural_button("📥 Загрузить", ft.Icons.IMAGE, on_click=on_pick_image),
+                        neural_button("🚀 Сгенерировать", ft.Icons.AUTO_STORIES,
+                                     on_click=on_generate_image, primary=True),
+                        neural_button("▶️ Печатать", ft.Icons.PLAY_ARROW, primary=True,
+                                     on_click=lambda e: send_current_gcode()),
+                    ], spacing=8),
+                    img_result,
+                ]),
+                ft.Column([
+                    style_dd,
+                    ft.Text("Настройки стиля — в разработке", size=12, color=PALETTE["text_muted"]),
+                ]),
+            ], spacing=20),
+        ], spacing=4),
         padding=30, expand=True,
     )
     
-    # Panel 3: HISTORY
+    # Panel 3: HISTORY (real data from DB)
+    history_list = ft.ListView(spacing=8, height=500)
+    
+    def refresh_history():
+        history_list.controls.clear()
+        try:
+            db = PlotHistoryDB("plot_history.db")
+            for r in db.recent(20):
+                card = glass_card(
+                    ft.Row([
+                        ft.Column([
+                            ft.Text(r["text"][:60] + ("..." if len(r.get("text","")) > 60 else ""),
+                                   size=13, color=PALETTE["text"], weight=ft.FontWeight.W_600),
+                            ft.Text(f"{r['font']} • {r['pages']} стр • {r['cmds']} cmd • {r['time']} min",
+                                   size=11, color=PALETTE["text_muted"]),
+                        ], spacing=2),
+                        ft.Text(r["timestamp"][:19], size=10, color=PALETTE["text_muted"]),
+                    ], spacing=12, alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=15, height=60,
+                )
+                history_list.controls.append(card)
+        except:
+            history_list.controls.append(ft.Text("История пуста", size=14, color=PALETTE["text_muted"]))
+        history_list.update()
+    
+    refresh_history()
+    
     history_panel = ft.Container(
         ft.Column([
-            ft.Text("📋 История", size=22, weight=ft.FontWeight.BOLD),
-            ft.Text("Здесь будет история всех печатей", size=12, color=PALETTE["text_muted"]),
-        ]),
+            ft.Row([
+                ft.Text("📋 История", size=22, weight=ft.FontWeight.BOLD, color=PALETTE["text"]),
+                neural_button("🔄 Обновить", ft.Icons.REFRESH, on_click=lambda e: refresh_history(), small=True),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Container(height=10),
+            history_list,
+        ], spacing=4),
         padding=30, expand=True,
     )
     
     # Panel 4: SETTINGS
     settings_panel = ft.Container(
         ft.Column([
-            ft.Text("⚙️ Настройки", size=22, weight=ft.FontWeight.BOLD),
-            ft.Text("Настройки плоттера и приложения", size=12, color=PALETTE["text_muted"]),
-        ]),
+            ft.Text("⚙️ Настройки", size=22, weight=ft.FontWeight.BOLD, color=PALETTE["text"]),
+            ft.Container(height=10),
+            glass_card(ft.Column([
+                ft.Text("GRBL / Плоттер", size=16, weight=ft.FontWeight.W_600, color=PALETTE["primary_glow"]),
+                ft.Row([
+                    ft.Dropdown(label="Порт", options=[ft.dropdown.Option(p) for p in ports] or [ft.dropdown.Option("COM3")],
+                               value=port_val, width=150, border_radius=10,
+                               border_color=PALETTE["border"], bgcolor=PALETTE["card"], color=PALETTE["text"]),
+                    ft.TextField(label="Baud", value="115200", width=100,
+                                border_radius=10, border_color=PALETTE["border"],
+                                bgcolor=PALETTE["card"], color=PALETTE["text"]),
+                    neural_button("Подключить", ft.Icons.CABLE, on_click=lambda e: connect_plotter()),
+                    neural_button("Домой", ft.Icons.HOME),
+                    neural_button("Перо↑", ft.Icons.ARROW_UPWARD),
+                    neural_button("Перо↓", ft.Icons.ARROW_DOWNWARD),
+                ], spacing=8),
+            ]), padding=20),
+            ft.Container(height=10),
+            glass_card(ft.Column([
+                ft.Text("О программе", size=16, weight=ft.FontWeight.W_600, color=PALETTE["primary_glow"]),
+                ft.Text("Horus Neural Plotter v4.0", size=14, color=PALETTE["text"]),
+                ft.Text("5 шрифтов • 17 стилей • 172 теста ✅ • 50+ фич", size=12, color=PALETTE["text_muted"]),
+                ft.Text("github.com/falteront-dotcom/horus-plotter", size=11, color=PALETTE["accent"]),
+            ]), padding=20),
+        ], spacing=4),
         padding=30, expand=True,
     )
     
@@ -491,8 +801,28 @@ async def main(page: ft.Page):
         except Exception as e:
             print(f"Connect error: {e}")
     
-    def send_to_plotter():
-        pass  # Will be wired up
+    def send_current_gcode():
+        gcode = state.get("text_gcode") or state.get("gcode")
+        if not gcode:
+            return
+        if not state.get("connected"):
+            connect_plotter()
+        if not state.get("sender"):
+            return
+        state["plotting"] = True
+        def _worker():
+            try:
+                s = state["sender"]
+                cmds = [l.strip() for l in gcode.split("\n") if l.strip() and not l.startswith(";")]
+                total = len(cmds)
+                for i, cmd in enumerate(cmds):
+                    s.send_raw(cmd)
+                    if i % 100 == 0:
+                        pass  # progress would update here
+                state["plotting"] = False
+            except Exception as e:
+                state["plotting"] = False
+        threading.Thread(target=_worker, daemon=True).start()
 
 if __name__ == "__main__":
     ft.run(main)
