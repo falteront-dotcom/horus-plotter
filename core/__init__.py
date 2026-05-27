@@ -34,6 +34,13 @@ from .features import (
     export_as_html_preview, export_as_svg, score_page_quality,
     register_plugin, get_plugin, list_plugins,
 )
+from .extras import (
+    BatchQueue, ResumeCheckpoint,
+    draw_box, draw_horizontal_rule, draw_strikethrough, draw_underline,
+    draw_watermark, generate_toc, render_bullet_point,
+    render_checkbox, render_numbered_marker,
+    subscript_baseline, superscript_baseline,
+)
 
 __all__ = [
     "CONVERTERS", "ConfigError", "ConverterError", "Drawing",
@@ -42,6 +49,7 @@ __all__ = [
     "PageCalibration", "PageLayout", "Path", "PlotConfig",
     "PlotHistoryDB", "PlotterError", "TextConfig", "UnsupportedFormatError",
     "WritingCorrection",
+    "BatchQueue", "ResumeCheckpoint",
     "apply_smart_typography", "auto_optimize_layout",
     "calculate_plot_cost", "calibrate_page_from_image",
     "compute_writing_correction", "detect_page_from_photo",
@@ -53,7 +61,9 @@ __all__ = [
     "get_line_y", "get_plugin", "image_to_gcode", "layout_pages",
     "list_fonts", "list_plugins", "notebook_page_to_gcode", "optimize",
     "optimize_line_density", "page_gcode_stats", "preprocess_image",
-    "register_plugin", "score_page_quality", "simulate_page_scan",
-    "smart_detect_paragraphs", "supported_chars", "text_to_drawing",
+    "register_plugin", "render_bullet_point", "render_checkbox",
+    "render_numbered_marker", "score_page_quality", "simulate_page_scan",
+    "smart_detect_paragraphs", "subscript_baseline", "superscript_baseline",
+    "supported_chars", "text_to_drawing",
     "text_to_notebook_drawing", "validate_config",
 ]
