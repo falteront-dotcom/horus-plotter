@@ -15,6 +15,7 @@ from core.notebook import NotebookConfig
 from core.text_engine import TextConfig
 from core.text_pipeline import full_text_pipeline
 from core.fonts import list_fonts, FONT_DISPLAY_NAMES
+from core.font_pool import list_all_fonts, get_font_by_name, generate_font_preview_svg, get_all_fonts
 from core.vision import auto_optimize_layout
 from core.improvements import estimate_plot_time, validate_config
 from core.features import PlotHistoryDB
@@ -406,7 +407,7 @@ async def main(page: ft.Page):
     
     dashboard_panel = ft.Container(dashboard, padding=20, expand=True)
     
-    # Panel 1: TEXT MODE — FULLY FUNCTIONAL
+    # Panel 1: TEXT MODE — FULLY FUNCTIONAL with 300+ fonts
     page_size_tf = ft.TextField(label="Страница (ШxВ мм)", value="210x297", width=140,
                                  border_radius=10, border_color=PALETTE["border"],
                                  bgcolor=PALETTE["card"], color=PALETTE["text"])
@@ -419,6 +420,18 @@ async def main(page: ft.Page):
     spacing_tf = ft.TextField(label="Интервал (мм)", value="8.0", width=100,
                                border_radius=10, border_color=PALETTE["border"],
                                bgcolor=PALETTE["card"], color=PALETTE["text"])
+    
+    # Font selector — lazy load 300+ fonts
+    font_options = [ft.dropdown.Option(k, v) for k, v in FONT_DISPLAY_NAMES.items()]
+    font_dd = ft.Dropdown(
+        label="Шрифт", width=220,
+        options=font_options,
+        value="semyon_cursive",
+        border_radius=10, border_color=PALETTE["border"],
+        bgcolor=PALETTE["card"], color=PALETTE["text"],
+    )
+    font_preview_svg = ft.Image(src="", width=220, height=35, fit=ft.BoxFit.CONTAIN, visible=False)
+    font_preview_label = ft.Text("", size=9, color=PALETTE["text_muted"])
     
     text_input = ft.TextField(
         hint_text="Вставьте текст лекции...", multiline=True, min_lines=12, max_lines=16,
@@ -594,8 +607,14 @@ async def main(page: ft.Page):
             ]),
             ft.Container(height=10),
             ft.Row([
-                font_dd, page_size_tf, margin_tf, font_size_tf, spacing_tf,
-            ], spacing=8),
+                ft.Column([
+                    font_dd,
+                    font_preview_label,
+                    font_preview_svg,
+                ]),
+                page_size_tf, margin_tf, font_size_tf, spacing_tf,
+            ], spacing=8, alignment=ft.MainAxisAlignment.START,
+               vertical_alignment=ft.CrossAxisAlignment.START),
             ft.Container(height=10),
             ft.Row([
                 ft.Column([
