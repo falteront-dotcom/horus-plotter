@@ -421,17 +421,71 @@ async def main(page: ft.Page):
                                border_radius=10, border_color=PALETTE["border"],
                                bgcolor=PALETTE["card"], color=PALETTE["text"])
     
-    # Font selector — lazy load 300+ fonts
-    font_options = [ft.dropdown.Option(k, v) for k, v in FONT_DISPLAY_NAMES.items()]
-    font_dd = ft.Dropdown(
-        label="Шрифт", width=220,
-        options=font_options,
-        value="semyon_cursive",
+    # Font selector — shows 300+ fonts in a searchable dialog
+    font_search = ft.TextField(
+        hint_text="Поиск шрифта...", width=220,
         border_radius=10, border_color=PALETTE["border"],
         bgcolor=PALETTE["card"], color=PALETTE["text"],
+        prefix_icon=ft.Icons.SEARCH,
+        dense=True, text_size=13,
     )
-    font_preview_svg = ft.Image(src="", width=220, height=35, fit=ft.BoxFit.CONTAIN, visible=False)
-    font_preview_label = ft.Text("", size=9, color=PALETTE["text_muted"])
+    
+    current_font_name = ft.Text("Курсив Семёна", size=12, color=PALETTE["primary_glow"],
+                                  weight=ft.FontWeight.W_600)
+    current_font_key = "semyon_cursive"
+    
+    # Compact font picker dialog
+    font_list_view = ft.ListView(spacing=2, height=0, visible=False)
+    
+    def show_font_picker(e):
+        """Show/hide font picker with all 300 fonts."""
+        query = font_search.value.lower().strip() if font_search.value else ""
+        if font_list_view.visible and not query:
+            font_list_view.visible = False
+            font_list_view.height = 0
+            font_list_view.update()
+            return
+        
+        # Load font list
+        try:
+            all_fonts = list_all_fonts()
+            font_list_view.controls.clear()
+            shown = 0
+            for name in all_fonts:
+                if query and query not in name.lower():
+                    continue
+                box = ft.Container(
+                    content=ft.Text(name, size=11, color=PALETTE["text"],
+                                   max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    bgcolor=PALETTE["surface"],
+                    border_radius=6,
+                    on_click=lambda e, n=name: _select_font(n),
+                    ink=True,
+                )
+                font_list_view.controls.append(box)
+                shown += 1
+                if shown >= 100:  # cap at 100 shown
+                    break
+            font_list_view.visible = True
+            font_list_view.height = min(300, shown * 38)
+        except Exception as ex:
+            font_list_view.controls = [ft.Text(f"Ошибка: {ex}", size=11)]
+            font_list_view.visible = True
+            font_list_view.height = 100
+        font_list_view.update()
+    
+    def _select_font(name):
+        nonlocal current_font_key
+        current_font_key = name
+        current_font_name.value = name[:35]
+        font_list_view.visible = False
+        font_list_view.height = 0
+        current_font_name.update()
+        font_list_view.update()
+    
+    font_search.on_change = lambda e: show_font_picker(e)
+    font_search.on_focus = show_font_picker
     
     text_input = ft.TextField(
         hint_text="Вставьте текст лекции...", multiline=True, min_lines=12, max_lines=16,
@@ -486,7 +540,7 @@ async def main(page: ft.Page):
             pw, ph = float(parts[0]), float(parts[1]) if len(parts) == 2 else (210, 297)
             nc = NotebookConfig(page_width_mm=pw, page_height_mm=ph,
                                left_margin_mm=float(margin_tf.value or 25))
-            tc = TextConfig(font_name=font_dd.value,
+            tc = TextConfig(font_name=current_font_key,
                            font_size_mm=float(font_size_tf.value or 5),
                            line_spacing_mm=float(spacing_tf.value or 8))
             pc = PlotConfig()
@@ -608,7 +662,12 @@ async def main(page: ft.Page):
             ft.Container(height=10),
             ft.Row([
                 ft.Column([
-                    font_dd,
+                ft.Column([
+                    ft.Text("Шрифт:", size=11, color=PALETTE["text_muted"]),
+                    current_font_name,
+                    font_search,
+                    font_list_view,
+                ], width=230),
                     font_preview_label,
                     font_preview_svg,
                 ]),
