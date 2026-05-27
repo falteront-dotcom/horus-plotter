@@ -18,6 +18,8 @@ from core.pipeline import image_to_gcode
 from core.notebook import NotebookConfig
 from core.text_engine import TextConfig
 from core.text_pipeline import full_text_pipeline
+from core.fonts import list_fonts, FONT_DISPLAY_NAMES
+from core.vision import auto_optimize_layout
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -317,6 +319,13 @@ async def main(page: ft.Page):
     bottom_margin_tf = ft.TextField(label="Нижнее поле (мм)", value="20", width=100, input_filter=ft.NumbersOnlyInputFilter())
 
     # Text rendering settings
+    fonts_list = list_fonts()
+    font_dd = ft.Dropdown(
+        label="Шрифт",
+        options=[ft.dropdown.Option(k, v) for k, v in FONT_DISPLAY_NAMES.items()],
+        value=fonts_list[0] if fonts_list else "semyon_cursive",
+        width=220,
+    )
     font_size_tf = ft.TextField(label="Размер шрифта (мм)", value="5.0", width=110, input_filter=ft.NumbersOnlyInputFilter())
     line_spacing_tf = ft.TextField(label="Межстр. интервал (мм)", value="8.0", width=120, input_filter=ft.NumbersOnlyInputFilter())
     char_spacing_tf = ft.TextField(label="Пробел букв (мм)", value="0.8", width=110, input_filter=ft.NumbersOnlyInputFilter())
@@ -345,6 +354,7 @@ async def main(page: ft.Page):
 
     btn_generate_text = ft.Button("Сгенерировать конспект", icon=ft.Icons.AUTO_STORIES,
                                    style=ft.ButtonStyle(bgcolor=ft.Colors.AMBER_800))
+    btn_auto_opt = ft.OutlinedButton("Авто-оптимизация", icon=ft.Icons.TUNE)
     btn_send_text = ft.Button("Писать в тетрадь", icon=ft.Icons.EDIT, disabled=True,
                                style=ft.ButtonStyle(bgcolor=ft.Colors.PURPLE_700))
     btn_prev_page = ft.IconButton(ft.Icons.ARROW_LEFT, disabled=True)
@@ -368,6 +378,7 @@ async def main(page: ft.Page):
 
     def _build_text_config() -> TextConfig:
         return TextConfig(
+            font_name=font_dd.value,
             font_size_mm=float(font_size_tf.value or 5),
             char_spacing_mm=float(char_spacing_tf.value or 0.8),
             word_spacing_mm=float(word_spacing_tf.value or 2.0),
@@ -408,6 +419,24 @@ async def main(page: ft.Page):
         status_text.value = f"Готово: {len(state['text_pages'])} страниц"
         status_text.color = ft.Colors.GREEN_400
         page.update()
+
+    async def on_auto_optimize(e):
+        text = text_input.value.strip()
+        if not text:
+            status_text.value = "Введите текст для анализа!"
+            status_text.color = ft.Colors.ORANGE_400
+            page.update()
+            return
+        nc = _build_notebook_config()
+        result = auto_optimize_layout(text, nc.page_width_mm, nc.page_height_mm,
+                                      nc.left_margin_mm, nc.top_margin_mm, nc.bottom_margin_mm)
+        font_size_tf.value = str(result['font_size_mm'])
+        line_spacing_tf.value = str(result['line_spacing_mm'])
+        status_text.value = f"Оптимально: {result['font_size_mm']}мм шрифт, {result['estimated_pages']} стр."
+        status_text.color = ft.Colors.GREEN_400
+        page.update()
+
+    btn_auto_opt.on_click = on_auto_optimize
 
     async def on_generate_text(e):
         text = text_input.value.strip()
@@ -684,9 +713,9 @@ async def main(page: ft.Page):
         ]),
         ft.Row([margin_line_chk, ruled_lines_chk]),
         ft.Divider(height=10),
-        ft.Text("Параметры письма (почерк Семёна)", size=14, weight=ft.FontWeight.W_600, color=ft.Colors.GREY_300),
+        ft.Text("Параметры письма", size=14, weight=ft.FontWeight.W_600, color=ft.Colors.GREY_300),
+        ft.Row([font_dd, font_size_tf, line_spacing_tf, char_spacing_tf]),
         ft.Row([
-            font_size_tf, line_spacing_tf, char_spacing_tf,
             word_spacing_tf, para_indent_tf,
             ft.Column([ft.Text("Естественность"), variability_sl], width=200),
         ]),
@@ -698,7 +727,7 @@ async def main(page: ft.Page):
             ft.Column([ft.Text("Скорость холостого"), travel_speed_sl], width=200),
         ]),
         ft.Divider(height=10),
-        ft.Row([btn_generate_text]),
+        ft.Row([btn_generate_text, btn_auto_opt]),
         ft.Divider(height=10),
         # Page navigation + preview
         ft.Row([

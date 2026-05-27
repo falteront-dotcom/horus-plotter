@@ -34,6 +34,17 @@ def resolve_font(size_px: int):
             continue
     return ImageFont.load_default()
 
+
+def resolve_bold_font(size_px: int):
+    bold_variants = ["arialbd.ttf", "segoeuib.ttf", "DejaVuSans-Bold.ttf",
+                     "LiberationSans-Bold.ttf", "Helvetica-Bold.ttc", "Arial-Bold.ttf"]
+    for name in bold_variants:
+        try:
+            return ImageFont.truetype(name, size_px)
+        except OSError:
+            continue
+    return resolve_font(size_px)
+
 Stroke = List[Tuple[float, float]]
 Dot = Tuple[float, float]
 CharDef = Tuple[List[Stroke], float, List[Dot]]
