@@ -17,7 +17,7 @@ def glass_card(child, width=None, height=None, padding=20, border_glow=False):
         border_radius=16, border=border, bgcolor=PALETTE["card"],
         shadow=ft.BoxShadow(spread_radius=1, blur_radius=20, color="#00000040"),
         gradient=ft.LinearGradient(
-            begin=ft.alignment.top_left, end=ft.alignment.bottom_right,
+            begin=ft.Alignment(-1, -1), end=ft.Alignment(1, 1),
             colors=[PALETTE["card"], PALETTE["card_hover"]],
         ),
     )

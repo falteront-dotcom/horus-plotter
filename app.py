@@ -23,37 +23,7 @@ from core.features import PlotHistoryDB
 from ui_components import PALETTE, glass_card, neural_button, status_badge, stat_card
 
 class ParticleSystem:
-    """Animated neural particles in background."""
-    def __init__(self, width=1100, height=900, count=80):
-        self.width = width
-        self.height = height
-        self.particles = []
-        self.connections = []
-        for _ in range(count):
-            self.particles.append({
-                "x": random.uniform(0, width),
-                "y": random.uniform(0, height),
-                "vx": random.uniform(-0.3, 0.3),
-                "vy": random.uniform(-0.3, 0.3),
-                "size": random.uniform(1.5, 3.5),
-                "hue": random.choice([270, 280, 290, 200, 170]),
-                "pulse": random.uniform(0, math.pi * 2),
-            })
-        # Pre-compute connections
-        for i, a in enumerate(self.particles):
-            for j, b in enumerate(self.particles[i+1:], i+1):
-                if math.hypot(a["x"] - b["x"], a["y"] - b["y"]) < 100:
-                    self.connections.append((i, j))
-    
-    def update(self):
-        for p in self.particles:
-            p["x"] += p["vx"]
-            p["y"] += p["vy"]
-            p["pulse"] += 0.02
-            if p["x"] < -20: p["x"] = self.width + 20
-            if p["x"] > self.width + 20: p["x"] = -20
-            if p["y"] < -20: p["y"] = self.height + 20
-            if p["y"] > self.height + 20: p["y"] = -20
+    pass  # Disabled — Flet 0.84 removed UserControl
 
 class PlotterSender:
     def __init__(self, port="COM3", baud=115200):
@@ -104,68 +74,26 @@ class PlotterSender:
 def list_serial_ports(): return [p.device for p in serial.tools.list_ports.comports()]
 
 # ─── NEURAL CANVAS ─────────────────────────────────────────────────────────
-class NeuralCanvas(ft.UserControl):
-    """Real-time animated neural network background."""
-    def __init__(self, width=1100, height=200):
-        super().__init__()
-        self.width = width
-        self.height = height
-        self.particles = ParticleSystem(width, height, 60)
-        self.frame = 0
-    
-    def build(self):
-        self.canvas = ft.Canvas(
-            [ft.Canvas(fill=ft.Paint(color=PALETTE["bg"]))],
-            width=self.width, height=self.height,
-        )
-        return ft.Container(self.canvas, width=self.width, height=self.height)
-    
-    def did_mount(self):
-        self.running = True
-        self._tick()
-    
-    def will_unmount(self):
-        self.running = False
-    
-    def _tick(self):
-        if not self.running: return
-        self.particles.update()
-        self.frame += 1
-        
-        shapes = []
-        ps = self.particles.particles
-        
-        # Draw connections (edges)
-        for i, j in self.particles.connections:
-            ax, ay = ps[i]["x"], ps[i]["y"]
-            bx, by = ps[j]["x"], ps[j]["y"]
-            dist = math.hypot(ax - bx, ay - by)
-            alpha = max(0, 1 - dist / 100) * 0.15
-            shapes.append(ft.Line(
-                ax, ay, bx, by,
-                ft.Paint(color="#7c3aed", stroke_width=0.5,
-                         style=ft.PaintingStyle.STROKE),
-            ))
-        
-        # Draw particles (nodes)
-        for p in ps:
-            glow = (math.sin(p["pulse"]) + 1) / 2
-            r = p["size"]
-            color = f"#{p['hue']:02x}"
-            shapes.append(ft.Circle(
-                p["x"], p["y"], r + glow * 2,
-                ft.Paint(color="#7c3aed20", style=ft.PaintingStyle.FILL),
-            ))
-            shapes.append(ft.Circle(
-                p["x"], p["y"], r,
-                ft.Paint(color="#a78bfa", style=ft.PaintingStyle.FILL),
-            ))
-        
-        self.canvas.shapes = shapes
-        self.canvas.update()
-        
-        # Throttle updates
-        threading.Timer(0.05, self._tick).start()
+# ─── NEURAL CANVAS (simplified for Flet 0.84) ────────────────────────────
+def neural_canvas_widget(width=1040, height=180):
+    """Static neural network decorative background."""
+    return ft.Container(
+        content=ft.Row([
+            ft.Container(width=8, height=8, border_radius=4, 
+                        bgcolor="#7c3aed",
+                        shadow=ft.BoxShadow(blur_radius=6, color="#7c3aed80")),
+            ft.Container(width=8, height=8, border_radius=4,
+                        bgcolor="#a78bfa",
+                        shadow=ft.BoxShadow(blur_radius=6, color="#a78bfa80")),
+            ft.Container(width=8, height=8, border_radius=4,
+                        bgcolor="#06b6d4",
+                        shadow=ft.BoxShadow(blur_radius=6, color="#06b6d480")),
+        ], spacing=40, alignment=ft.MainAxisAlignment.CENTER),
+        width=width, height=height,
+        border_radius=12,
+        bgcolor=PALETTE["card"],
+        alignment=ft.Alignment(0, 0),
+    )
 # ─── MAIN APP ────────────────────────────────────────────────────────────
 async def main(page: ft.Page):
     page.title = "Horus Neural Plotter"
@@ -210,13 +138,13 @@ async def main(page: ft.Page):
                 ft.Text(label, size=13, color=PALETTE["primary_glow"] if is_active else PALETTE["text_dim"],
                        weight=ft.FontWeight.W_600 if is_active else ft.FontWeight.NORMAL),
             ], spacing=12),
-            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            padding=ft.Padding.symmetric(horizontal=16, vertical=12),
             border_radius=10,
             border=ft.Border(left=ft.BorderSide(3, PALETTE["primary"])) if is_active else None,
             bgcolor=PALETTE["primary_dim"] + "30" if is_active else None,
             on_click=on_nav_click(idx),
             ink=True,
-            animate=ft.animation.Animation(300, ft.AnimationCurve.EASE_OUT),
+            animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
         ))
     
     # Store nav buttons for updating active state
@@ -250,7 +178,7 @@ async def main(page: ft.Page):
                         content=ft.Text("⚡", size=24),
                         width=36, height=36, border_radius=10,
                         bgcolor=PALETTE["primary"],
-                        alignment=ft.alignment.center,
+                        alignment=ft.Alignment(0, 0),
                         shadow=ft.BoxShadow(blur_radius=12, color=PALETTE["primary"] + "60"),
                     ),
                     ft.Column([
@@ -259,7 +187,7 @@ async def main(page: ft.Page):
                         ft.Text("neural plotter", size=10, color=PALETTE["text_muted"]),
                     ], spacing=-2),
                 ], spacing=12),
-                padding=ft.padding.only(bottom=30),
+                padding=ft.Padding.only(bottom=30),
             ),
             # Navigation
             *nav_btns,
@@ -289,7 +217,7 @@ async def main(page: ft.Page):
             ft.Container(width=20),
             neural_button("Подключить", ft.Icons.CABLE, on_click=lambda e: connect_plotter(), small=True),
         ], spacing=12),
-        padding=ft.padding.only(left=24, right=24, top=16, bottom=16),
+        padding=ft.Padding.only(left=24, right=24, top=16, bottom=16),
         bgcolor=PALETTE["surface"],
         border=ft.Border(bottom=ft.BorderSide(1, PALETTE["border"])),
     )
@@ -297,7 +225,7 @@ async def main(page: ft.Page):
     # ─── CONTENT PANELS ────────────────────────────────────────────────
     
     # Panel 0: DASHBOARD
-    neural_canvas = NeuralCanvas(width=1040, height=180)
+    neural_status_area = neural_canvas_widget(width=1040, height=180)
     
     dashboard = ft.Column([
         ft.Container(
@@ -307,9 +235,9 @@ async def main(page: ft.Page):
                 ft.Text("Система активна. Двигатели откалиброваны. GRBL v1.1", size=12,
                        color=PALETTE["text_muted"]),
             ], spacing=4),
-            padding=ft.padding.only(left=24, top=20),
+            padding=ft.Padding.only(left=24, top=20),
         ),
-        neural_canvas,
+        neural_status_area,
         ft.Container(height=20),
         ft.Row([
             stat_card("Страниц готово", "0", "на сегодня", ft.Icons.DESCRIPTION, PALETTE["primary_glow"]),
@@ -355,6 +283,7 @@ async def main(page: ft.Page):
     current_font_name = ft.Text("Курсив Семёна", size=12, color=PALETTE["primary_glow"],
                                   weight=ft.FontWeight.W_600)
     current_font_key = "semyon_cursive"
+    font_preview_label = ft.Text("", size=9, color=PALETTE["text_muted"])
     
     # Compact font picker dialog
     font_list_view = ft.ListView(spacing=2, height=0, visible=False)
@@ -379,7 +308,7 @@ async def main(page: ft.Page):
                 box = ft.Container(
                     content=ft.Text(name, size=11, color=PALETTE["text"],
                                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=8),
                     bgcolor=PALETTE["surface"],
                     border_radius=6,
                     on_click=lambda e, n=name: _select_font(n),
@@ -584,15 +513,12 @@ async def main(page: ft.Page):
             ft.Container(height=10),
             ft.Row([
                 ft.Column([
-                ft.Column([
                     ft.Text("Шрифт:", size=11, color=PALETTE["text_muted"]),
                     current_font_name,
                     font_search,
                     font_list_view,
-                ], width=230),
                     font_preview_label,
-                    font_preview_svg,
-                ]),
+                ], width=240),
                 page_size_tf, margin_tf, font_size_tf, spacing_tf,
             ], spacing=8, alignment=ft.MainAxisAlignment.START,
                vertical_alignment=ft.CrossAxisAlignment.START),
@@ -635,7 +561,7 @@ async def main(page: ft.Page):
             ft.Icon(ft.Icons.IMAGE, size=64, color=PALETTE["text_muted"]),
             ft.Text("Перетащите или выберите изображение", size=14, color=PALETTE["text_muted"]),
         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.MainAxisAlignment.CENTER),
-        width=380, height=380, border_radius=16, border=ft.Border.all(2, PALETTE["border"], ft.Dash),
+        width=380, height=380, border_radius=16, border=ft.Border.all(2, PALETTE["border"], None),
         bgcolor=PALETTE["surface"],
     )
     
@@ -759,6 +685,9 @@ async def main(page: ft.Page):
     history_list = ft.ListView(spacing=8, height=500)
     
     def refresh_history():
+        if not hasattr(history_list, 'page') or history_list.page is None:
+            history_needs_refresh = True
+            return
         history_list.controls.clear()
         try:
             db = PlotHistoryDB("plot_history.db")
@@ -780,7 +709,9 @@ async def main(page: ft.Page):
             history_list.controls.append(ft.Text("История пуста", size=14, color=PALETTE["text_muted"]))
         history_list.update()
     
-    refresh_history()
+    
+    # Will refresh after page is built
+    history_needs_refresh = True
     
     history_panel = ft.Container(
         ft.Column([
