@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.playwright-cli/
+node_modules/
+*.egg-info/
+dist/
+build/
+.env

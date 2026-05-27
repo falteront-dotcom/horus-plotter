@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Horus Plotter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header>
+      <h1>Horus Plotter</h1>
+      <span class="subtitle">drop image → plot</span>
+    </header>
+
+    <!-- Drop Zone -->
+    <div id="drop-zone" class="drop-zone">
+      <div class="drop-content">
+        <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+        </svg>
+        <p>Drop image here</p>
+        <span class="hint">or click to browse</span>
+      </div>
+      <input type="file" id="file-input" accept="image/*" hidden>
+    </div>
+
+    <!-- Preview -->
+    <div id="preview-section" class="hidden">
+      <div class="preview-row">
+        <div class="preview-box">
+          <h3>Original</h3>
+          <canvas id="original-canvas"></canvas>
+        </div>
+        <div class="preview-box">
+          <h3>Plot Preview</h3>
+          <canvas id="preview-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div id="settings-section" class="hidden">
+      <div class="settings-grid">
+        <div class="setting">
+          <label>Style</label>
+          <select id="style">
+            <option value="hatching" selected>Hatching</option>
+            <option value="halftone">Halftone</option>
+            <option value="stipple">Stipple</option>
+            <option value="spiral">Spiral</option>
+          </select>
+        </div>
+        <div class="setting">
+          <label>Width (mm)</label>
+          <input id="width" type="number" value="200" min="50" max="300" step="10">
+        </div>
+        <div class="setting">
+          <label>Spacing (mm)</label>
+          <input id="spacing" type="number" value="3" min="1" max="10" step="0.5">
+        </div>
+        <div class="setting">
+          <label>Speed (mm/min)</label>
+          <input id="speed" type="number" value="3000" min="500" max="5000" step="100">
+        </div>
+        <div class="setting">
+          <label>Pen Down Z</label>
+          <input id="penDown" type="number" value="5" min="0" max="20" step="1">
+        </div>
+        <div class="setting">
+          <label>Pen Up Z</label>
+          <input id="penUp" type="number" value="0" min="0" max="20" step="1">
+        </div>
+        <div class="setting">
+          <label>Port</label>
+          <select id="port-select">
+            <option value="COM3">COM3</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div id="actions-section" class="hidden">
+      <button id="btn-convert" class="btn btn-secondary">Generate Preview</button>
+      <button id="btn-send" class="btn btn-primary" disabled>Send to Plotter</button>
+      <div id="status" class="status"></div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
