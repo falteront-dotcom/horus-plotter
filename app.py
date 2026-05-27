@@ -441,6 +441,19 @@ async def main(page: ft.Page):
                              border_radius=16, visible=False)
     page_counter = ft.Text("", size=14, color=PALETTE["primary_glow"], weight=ft.FontWeight.W_700)
     
+    async def on_save_gcode(e):
+        """Save current G-code to file (works for both text and image mode)."""
+        gcode = state.get("text_gcode") or state.get("gcode")
+        if not gcode:
+            return
+        result = await file_picker.save_file(
+            dialog_title="Сохранить G-code", file_name="plot.gcode",
+            allowed_extensions=["gcode", "nc", "txt"]
+        )
+        if result and result.path:
+            with open(result.path, "w") as f:
+                f.write(gcode)
+
     async def on_load_text_file(e):
         result = await file_picker.pick_files(allowed_extensions=["txt"])
         if result:
@@ -598,8 +611,6 @@ async def main(page: ft.Page):
                         neural_button("▶️ Печатать", ft.Icons.PLAY_ARROW,
                                      primary=True, on_click=lambda e: send_current_gcode()),
                     ], spacing=8),
-                    ft.Container(height=10),
-                    text_input,
                     ft.Container(height=8),
                     text_result,
                 ], expand=True, spacing=4),
@@ -617,31 +628,45 @@ async def main(page: ft.Page):
         padding=30, expand=True,
     )
     
-    # Panel 2: IMAGE MODE
-    img_preview = ft.Image(src="", width=350, height=350, fit=ft.BoxFit.CONTAIN, visible=False, border_radius=16)
+    # Panel 2: IMAGE MODE — FULLY FUNCTIONAL with all 17 styles
+    img_preview = ft.Image(src="", width=380, height=380, fit=ft.BoxFit.CONTAIN, visible=False, border_radius=16)
     img_placeholder = ft.Container(
         content=ft.Column([
             ft.Icon(ft.Icons.IMAGE, size=64, color=PALETTE["text_muted"]),
             ft.Text("Перетащите или выберите изображение", size=14, color=PALETTE["text_muted"]),
         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.MainAxisAlignment.CENTER),
-        width=350, height=350, border_radius=16, border=ft.Border.all(2, PALETTE["border"], ft.Dash),
+        width=380, height=380, border_radius=16, border=ft.Border.all(2, PALETTE["border"], ft.Dash),
         bgcolor=PALETTE["surface"],
     )
+    
+    ALL_IMAGE_STYLES = {
+        "hatching":"Штриховка","cross-hatching":"Крестовая","halftone":"Полутон",
+        "stipple":"Точечная","spiral":"Спираль","flow-field":"Потоковое поле",
+        "meandering":"Извилистая","edge-detect":"Контуры","dots":"Сетка точек",
+        "concentric":"Концентрическая","woodcut":"Гравюра","zigzag":"Зигзаг",
+        "tiles":"Плитка","scribble":"Каракули","contour":"Изолинии",
+        "waves":"Волны","hexagon":"Соты"
+    }
+    
     style_dd = ft.Dropdown(
-        label="Стиль", width=200, value="hatching",
-        options=[ft.dropdown.Option(k, v) for k, v in {
-            "hatching":"Штриховка","halftone":"Полутон","stipple":"Точечная",
-            "spiral":"Спираль","woodcut":"Гравюра","hexagon":"Соты",
-            "concentric":"Концентр.","waves":"Волны","scribble":"Каракули"
-        }.items()],
+        label="Стиль", width=220, value="hatching",
+        options=[ft.dropdown.Option(k, v) for k, v in ALL_IMAGE_STYLES.items()],
         border_radius=10, border_color=PALETTE["border"],
         bgcolor=PALETTE["card"], color=PALETTE["text"],
     )
-    img_result = ft.Text("", size=12, color=PALETTE["text_muted"])
+    img_width_sl = ft.Slider(min=50, max=300, divisions=25, label="{value} мм", value=200,
+                              active_color=PALETTE["primary"])
+    img_spacing_sl = ft.Slider(min=1, max=10, divisions=18, label="{value} мм", value=3,
+                                active_color=PALETTE["primary"])
+    img_speed_sl = ft.Slider(min=500, max=5000, divisions=45, label="{value}", value=3000,
+                              active_color=PALETTE["primary"])
+    img_invert_chk = ft.Checkbox(label="Инверсия", value=False, active_color=PALETTE["primary"])
+    img_auto_inv_chk = ft.Checkbox(label="Авто-инверсия", value=True, active_color=PALETTE["primary"])
+    img_result = ft.Text("", size=13, color=PALETTE["text_muted"], weight=ft.FontWeight.W_600)
     
     async def on_pick_image(e):
         result = await file_picker.pick_files(
-            allowed_extensions=["png", "jpg", "jpeg", "bmp", "webp", "pdf", "docx"]
+            allowed_extensions=["png", "jpg", "jpeg", "bmp", "webp", "pdf", "docx", "tiff"]
         )
         if result:
             state["image_path"] = result[0].path
@@ -661,15 +686,22 @@ async def main(page: ft.Page):
             img_result.update()
             return
         try:
-            pc = PlotConfig(style=style_dd.value)
+            pc = PlotConfig(
+                style=style_dd.value,
+                width_mm=img_width_sl.value,
+                spacing_mm=img_spacing_sl.value,
+                speed=int(img_speed_sl.value),
+                invert=img_invert_chk.value,
+                auto_invert=img_auto_inv_chk.value,
+            )
             gcode, b64 = await asyncio.get_running_loop().run_in_executor(
                 None, image_to_gcode, state["image_path"], pc
             )
             state["gcode"] = gcode
             if b64:
                 img_preview.src = f"data:image/png;base64,{b64}"
-            n = len([l for l in gcode.split(chr(10)) if l.strip() and not l.startswith(';')])
-            img_result.value = f"✅ {n} команд • стиль: {style_dd.value}"
+            cmds = len([l for l in gcode.split(chr(10)) if l.strip() and not l.startswith(';')])
+            img_result.value = f"✅ {cmds} команд • стиль: {ALL_IMAGE_STYLES[style_dd.value]}"
             img_result.color = PALETTE["success"]
         except Exception as ex:
             img_result.value = f"❌ {ex}"
@@ -677,26 +709,46 @@ async def main(page: ft.Page):
         img_result.update()
         img_preview.update()
     
+    # Also regenerate on slider change
+    async def on_style_change(e):
+        if state.get("image_path"):
+            await on_generate_image(e)
+    
+    style_dd.on_change = on_style_change
+    img_width_sl.on_change = on_style_change
+    img_spacing_sl.on_change = on_style_change
+    img_invert_chk.on_change = on_style_change
+    img_auto_inv_chk.on_change = on_style_change
+    
     image_panel = ft.Container(
         ft.Column([
             ft.Text("🖼 Изображения", size=22, weight=ft.FontWeight.BOLD, color=PALETTE["text"]),
+            ft.Text("Все 17 стилей с живым превью", size=12, color=PALETTE["text_muted"]),
             ft.Container(height=10),
             ft.Row([
                 ft.Column([
-                    ft.Stack([img_placeholder, img_preview], width=350, height=350),
-                    ft.Container(height=10),
+                    ft.Stack([img_placeholder, img_preview], width=380, height=380),
+                    ft.Container(height=12),
                     ft.Row([
                         neural_button("📥 Загрузить", ft.Icons.IMAGE, on_click=on_pick_image),
                         neural_button("🚀 Сгенерировать", ft.Icons.AUTO_STORIES,
                                      on_click=on_generate_image, primary=True),
+                        neural_button("💾 Сохранить .gcode", ft.Icons.SAVE, on_click=on_save_gcode, small=True),
                         neural_button("▶️ Печатать", ft.Icons.PLAY_ARROW, primary=True,
                                      on_click=lambda e: send_current_gcode()),
                     ], spacing=8),
                     img_result,
                 ]),
                 ft.Column([
-                    style_dd,
-                    ft.Text("Настройки стиля — в разработке", size=12, color=PALETTE["text_muted"]),
+                    glass_card(ft.Column([
+                        ft.Text("Настройки стиля", size=14, weight=ft.FontWeight.W_600,
+                               color=PALETTE["primary_glow"]),
+                        style_dd,
+                        ft.Text("Ширина (мм)"), img_width_sl,
+                        ft.Text("Шаг (мм)"), img_spacing_sl,
+                        ft.Text("Скорость (мм/мин)"), img_speed_sl,
+                        img_invert_chk, img_auto_inv_chk,
+                    ], spacing=4), padding=20),
                 ]),
             ], spacing=20),
         ], spacing=4),
